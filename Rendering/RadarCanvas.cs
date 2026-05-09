@@ -27,6 +27,7 @@ public sealed class RadarCanvas : FrameworkElement
     private static readonly RadialGradientBrush BackgroundBrushLight = BuildBackground(Color.FromRgb(0xFA, 0xFB, 0xFC), Color.FromRgb(0xE2, 0xE6, 0xEC));
     private static readonly Pen PlaneOutlinePenLight = Frozen(new Pen(Frozen(new SolidColorBrush(Color.FromArgb(0xCC, 0x0A, 0x14, 0x28))), 0.6));
     private static readonly Geometry PlaneGeometry = BuildPlaneGeometry();
+    private static readonly Geometry HelicopterGeometry = BuildHelicopterGeometry();
 
     private bool IsLight => string.Equals(_config.MapTheme, "light", StringComparison.OrdinalIgnoreCase);
     private Brush LabelBrush => IsLight ? LabelBrushLight : LabelBrushDark;
@@ -45,6 +46,16 @@ public sealed class RadarCanvas : FrameworkElement
         var g = Geometry.Parse(
             "M 0,-7 L 0.8,-2 L 8,0.5 L 1.2,1.5 L 0.8,4 L 3,5.5 L 0.4,5.5 " +
             "L 0,6 L -0.4,5.5 L -3,5.5 L -0.8,4 L -1.2,1.5 L -8,0.5 L -0.8,-2 Z");
+        g.Freeze();
+        return g;
+    }
+
+    private static Geometry BuildHelicopterGeometry()
+    {
+        var g = Geometry.Parse(
+            "M -2.5,-3 L -3,0 L -2.5,4 L 2.5,4 L 3,0 L 2.5,-3 Z " +
+            "M -0.7,4 L 0.7,4 L 0.7,7.5 L -0.7,7.5 Z " +
+            "M -2.8,7 L 2.8,7 L 2.8,8 L -2.8,8 Z");
         g.Freeze();
         return g;
     }
@@ -108,6 +119,7 @@ public sealed class RadarCanvas : FrameworkElement
                 st.OriginCountry = ac.OriginCountry;
                 st.VerticalRate = ac.VerticalRateMetersPerSec;
                 st.OnGround = ac.OnGround;
+                st.Category = ac.Category;
                 st.LastUpdateUtc = ac.LastUpdateUtc;
                 st.BlendStartUtc = nowUtc;
                 st.BlendFromKm = st.DisplayKm ?? pt;
@@ -354,7 +366,17 @@ public sealed class RadarCanvas : FrameworkElement
         dc.PushTransform(new RotateTransform(st.HeadingRad * 180.0 / Math.PI));
         dc.PushTransform(new ScaleTransform(scale, scale));
 
-        dc.DrawGeometry(brush, PlaneOutlinePen, PlaneGeometry);
+        if (st.Category == 8)
+        {
+            var rotorBrush = new SolidColorBrush(Color.FromArgb(0x33, color.R, color.G, color.B));
+            rotorBrush.Freeze();
+            dc.DrawEllipse(rotorBrush, null, new Point(0, 0.5), 8.5, 8.5);
+            dc.DrawGeometry(brush, PlaneOutlinePen, HelicopterGeometry);
+        }
+        else
+        {
+            dc.DrawGeometry(brush, PlaneOutlinePen, PlaneGeometry);
+        }
 
         dc.Pop();
         dc.Pop();
@@ -472,6 +494,7 @@ public sealed class RadarCanvas : FrameworkElement
         public double AltitudeMeters;
         public double VerticalRate;
         public bool OnGround;
+        public int Category;
         public string? Callsign;
         public string? OriginCountry;
         public AltitudeBand Band => AltitudeBands.Classify(AltitudeMeters);

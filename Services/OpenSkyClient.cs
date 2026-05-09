@@ -36,7 +36,7 @@ public sealed class OpenSkyClient : IDisposable
     public async Task<IReadOnlyList<Aircraft>> GetStatesInBoxAsync(
         double latMin, double latMax, double lonMin, double lonMax, CancellationToken ct = default)
     {
-        var url = $"{Endpoint}?lamin={Fmt(latMin)}&lomin={Fmt(lonMin)}&lamax={Fmt(latMax)}&lomax={Fmt(lonMax)}";
+        var url = $"{Endpoint}?lamin={Fmt(latMin)}&lomin={Fmt(lonMin)}&lamax={Fmt(latMax)}&lomax={Fmt(lonMax)}&extended=1";
         using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
         await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -63,6 +63,7 @@ public sealed class OpenSkyClient : IDisposable
             double? trueTrack = ReadNullableDouble(s[10]);
             double? verticalRate = ReadNullableDouble(s[11]);
             double? geoAlt = ReadNullableDouble(s[13]);
+            int category = s.GetArrayLength() > 17 && s[17].ValueKind == JsonValueKind.Number ? s[17].GetInt32() : 0;
 
             if (lat is null || lon is null) continue;
 
@@ -80,6 +81,7 @@ public sealed class OpenSkyClient : IDisposable
                 TrueTrackDegrees = trueTrack ?? 0,
                 VerticalRateMetersPerSec = verticalRate ?? 0,
                 OnGround = onGround,
+                Category = category,
                 LastUpdateUtc = nowUtc,
             });
         }

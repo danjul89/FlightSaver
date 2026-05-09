@@ -15,6 +15,7 @@ public sealed class Aircraft
     public double TrueTrackDegrees { get; set; }
     public double VerticalRateMetersPerSec { get; set; }
     public bool OnGround { get; set; }
+    public int Category { get; set; }
 
     public DateTime LastUpdateUtc { get; set; }
     public DateTime FirstSeenUtc { get; set; } = DateTime.UtcNow;
