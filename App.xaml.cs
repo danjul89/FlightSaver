@@ -17,13 +17,16 @@ public partial class App : Application
         var mode = ParseMode(e.Args);
         var configExisted = File.Exists(ConfigService.ConfigPath);
         var config = ConfigService.LoadOrDefault();
-        if (!configExisted)
+        var isAutoLocation = string.Equals(config.LocationMode, "auto", StringComparison.OrdinalIgnoreCase);
+        if (!configExisted || isAutoLocation)
         {
             TryDetectIpLocation(config);
             ConfigService.Save(config);
         }
 
+        CacheManager.Apply(config.CacheLimitMb);
         TileCache.Instance.Theme = config.MapTheme;
+        _ = UpdateService.Instance.CheckAsync();
 
         switch (mode)
         {

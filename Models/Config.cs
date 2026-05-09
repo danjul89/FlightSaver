@@ -7,7 +7,16 @@ public sealed class Config
     public double Longitude { get; set; } = 18.0649;
     public int RadiusKm { get; set; } = 50;
 
-    public string MapTheme { get; set; } = "dark";
+    public string LocationMode { get; set; } = "auto";
+
+    public string MapTheme { get; set; } = "satellite";
+
+    public int CacheLimitMb { get; set; } = 200;
+
+    public string FocusMode { get; set; } = "closest";
+    public int CycleIntervalSeconds { get; set; } = 10;
+
+    public bool ShowDebugLog { get; set; } = false;
 
     public string? OpenSkyUsername { get; set; }
     public string? OpenSkyPasswordEncryptedBase64 { get; set; }

@@ -15,6 +15,8 @@ public sealed class RadarCanvas : FrameworkElement
     private readonly Dictionary<string, AircraftState> _state = new();
     private DateTime _lastFrameUtc = DateTime.UtcNow;
     private double _pulseSeconds;
+    private string? _focusedId;
+    private DateTime _lastFocusAdvanceUtc;
 
     private static readonly Brush LabelBrushDark = Frozen(new SolidColorBrush(Color.FromArgb(0xAA, 0xFF, 0xFF, 0xFF)));
     private static readonly Brush LabelDimBrushDark = Frozen(new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)));
@@ -48,11 +50,19 @@ public sealed class RadarCanvas : FrameworkElement
         return false;
     }
 
+    private static readonly Brush PanelBgDark = Frozen(new SolidColorBrush(Color.FromArgb(0xB8, 0x05, 0x0A, 0x18)));
+    private static readonly Brush PanelBgLight = Frozen(new SolidColorBrush(Color.FromArgb(0xD0, 0xFA, 0xFB, 0xFD)));
+    private static readonly Brush PanelBorderDark = Frozen(new SolidColorBrush(Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF)));
+    private static readonly Brush PanelBorderLight = Frozen(new SolidColorBrush(Color.FromArgb(0x44, 0x05, 0x0A, 0x18)));
+
     private bool IsLight => string.Equals(_config.MapTheme, "light", StringComparison.OrdinalIgnoreCase);
+    private bool IsSatellite => string.Equals(_config.MapTheme, "satellite", StringComparison.OrdinalIgnoreCase);
     private Brush LabelBrush => IsLight ? LabelBrushLight : LabelBrushDark;
     private Brush LabelDimBrush => IsLight ? LabelDimBrushLight : LabelDimBrushDark;
     private Brush BackgroundBrush => IsLight ? BackgroundBrushLight : BackgroundBrushDark;
-    private Pen? PlaneOutlinePen => IsLight ? PlaneOutlinePenLight : null;
+    private Brush PanelBgBrush => IsLight ? PanelBgLight : PanelBgDark;
+    private Brush PanelBorderBrush => IsLight ? PanelBorderLight : PanelBorderDark;
+    private Pen? PlaneOutlinePen => (IsLight || IsSatellite) ? PlaneOutlinePenLight : null;
 
     private static T Frozen<T>(T freezable) where T : System.Windows.Freezable
     {
@@ -178,6 +188,7 @@ public sealed class RadarCanvas : FrameworkElement
         var pxPerKm = radiusPx / _config.RadiusKm;
 
         DrawMap(dc, w, h, center, pxPerKm);
+        DrawCities(dc, w, h, center, pxPerKm);
         DrawCompass(dc, center, radiusPx);
 
         var nowUtc = DateTime.UtcNow;
@@ -189,15 +200,197 @@ public sealed class RadarCanvas : FrameworkElement
             .Where(kv => kv.Value.DisplayKm.HasValue && (nowUtc - kv.Value.LastUpdateUtc) < TimeSpan.FromSeconds(120))
             .ToList();
 
-        var closestId = FindClosestId(aircraftToDraw);
+        var focusedId = DetermineFocusedId(aircraftToDraw, nowUtc);
 
         foreach (var (id, st) in aircraftToDraw)
-            DrawPlane(dc, center, pxPerKm, st, isClosest: id == closestId);
+            DrawPlane(dc, center, pxPerKm, st, isClosest: id == focusedId);
 
+        DrawClosestRouteAirports(dc, w, h, center, pxPerKm, focusedId);
         DrawCenter(dc, center);
         DrawStatusIndicator(dc, w, h);
-        DrawClosestInfoPanel(dc, closestId);
+        DrawClosestInfoPanel(dc, focusedId);
+        DrawTrackerLog(dc, w, h);
         DrawAttribution(dc, w, h);
+        DrawUpdateHint(dc, w, h);
+    }
+
+    private static readonly Brush LogInfoBrush =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xAA, 0xCC, 0xCC, 0xCC)));
+    private static readonly Brush LogSuccessBrush =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xCC, 0x34, 0xD3, 0x99)));
+    private static readonly Brush LogWarningBrush =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xCC, 0xFC, 0xD3, 0x4D)));
+    private static readonly Brush LogErrorBrush =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xDD, 0xFB, 0x71, 0x85)));
+    private static readonly Brush LogTimeBrush =
+        Frozen(new SolidColorBrush(Color.FromArgb(0x88, 0xCC, 0xCC, 0xCC)));
+    private static readonly Brush LogShadowBrush =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xCC, 0x00, 0x00, 0x00)));
+
+    private void DrawTrackerLog(DrawingContext dc, double w, double h)
+    {
+        if (!_config.ShowDebugLog) return;
+        var entries = _tracker.RecentLog;
+        if (entries.Count == 0) return;
+
+        const double padding = 16;
+        const double dotDiameter = 12;
+        const double dotGap = 12;
+        const double timeGap = 10;
+        const double rowGap = 6;
+        const double fontSize = 14;
+        const double rightMargin = 16;
+        const double topMargin = 16;
+
+        var rows = new List<(FormattedText time, FormattedText msg, Brush color)>();
+        double maxRowWidth = 0;
+        double rowHeight = 0;
+        foreach (var entry in entries)
+        {
+            var color = entry.Level switch
+            {
+                TrackerLogLevel.Success => LogSuccessBrush,
+                TrackerLogLevel.Warning => LogWarningBrush,
+                TrackerLogLevel.Error => LogErrorBrush,
+                _ => LogInfoBrush,
+            };
+            var time = new FormattedText(
+                entry.UtcTime.ToLocalTime().ToString("HH:mm:ss"),
+                System.Globalization.CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                LabelFace, fontSize, LogTimeBrush, 1.0);
+            var msg = new FormattedText(
+                entry.Message,
+                System.Globalization.CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                LabelFace, fontSize, color, 1.0);
+            msg.SetFontWeight(FontWeights.SemiBold);
+
+            rows.Add((time, msg, color));
+            maxRowWidth = Math.Max(maxRowWidth, dotDiameter + dotGap + time.Width + timeGap + msg.Width);
+            rowHeight = Math.Max(rowHeight, msg.Height);
+        }
+
+        double boxWidth = maxRowWidth + padding * 2;
+        double boxHeight = padding * 2 + rows.Count * rowHeight + (rows.Count - 1) * rowGap;
+        double boxX = w - rightMargin - boxWidth;
+        double boxY = topMargin;
+
+        var borderPen = new Pen(PanelBorderBrush, 1);
+        borderPen.Freeze();
+        dc.DrawRoundedRectangle(PanelBgBrush, borderPen, new Rect(boxX, boxY, boxWidth, boxHeight), 10, 10);
+
+        double y = boxY + padding;
+        foreach (var (time, msg, color) in rows)
+        {
+            var dotCenter = new Point(boxX + padding + dotDiameter / 2, y + rowHeight / 2);
+            dc.DrawEllipse(color, null, dotCenter, dotDiameter / 2, dotDiameter / 2);
+
+            var timeX = boxX + padding + dotDiameter + dotGap;
+            var msgX = timeX + time.Width + timeGap;
+            dc.DrawText(time, new Point(timeX, y));
+            dc.DrawText(msg, new Point(msgX, y));
+
+            y += rowHeight + rowGap;
+        }
+    }
+
+    private string? DetermineFocusedId(List<KeyValuePair<string, AircraftState>> aircraftToDraw, DateTime nowUtc)
+    {
+        if (aircraftToDraw.Count == 0)
+        {
+            _focusedId = null;
+            return null;
+        }
+
+        var mode = string.Equals(_config.FocusMode, "cycle", StringComparison.OrdinalIgnoreCase) ? "cycle" : "closest";
+        if (mode != "cycle")
+        {
+            _focusedId = FindClosestId(aircraftToDraw);
+            return _focusedId;
+        }
+
+        var sortedIds = aircraftToDraw
+            .OrderBy(kv => kv.Value.SnapshotKm.X * kv.Value.SnapshotKm.X + kv.Value.SnapshotKm.Y * kv.Value.SnapshotKm.Y)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        if (string.IsNullOrEmpty(_focusedId) || !sortedIds.Contains(_focusedId))
+        {
+            _focusedId = sortedIds[0];
+            _lastFocusAdvanceUtc = nowUtc;
+            return _focusedId;
+        }
+
+        var intervalSec = Math.Max(2, _config.CycleIntervalSeconds);
+        if ((nowUtc - _lastFocusAdvanceUtc).TotalSeconds >= intervalSec)
+        {
+            var currentIdx = sortedIds.IndexOf(_focusedId);
+            var nextIdx = (currentIdx + 1) % sortedIds.Count;
+            _focusedId = sortedIds[nextIdx];
+            _lastFocusAdvanceUtc = nowUtc;
+        }
+
+        return _focusedId;
+    }
+
+    private static readonly Brush UpdateHintBrush =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xCC, 0x34, 0xD3, 0x99)));
+
+    private void DrawUpdateHint(DrawingContext dc, double w, double h)
+    {
+        if (!UpdateService.Instance.IsUpdateAvailable) return;
+        var v = UpdateService.Instance.LatestVersion;
+        if (string.IsNullOrEmpty(v)) return;
+        var ft = new FormattedText(
+            $"v{v} available — open Settings to update",
+            System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            LabelFace, 11, UpdateHintBrush, 1.0);
+        dc.DrawText(ft, new Point(20, h - ft.Height - 6));
+    }
+
+    private void DrawClosestRouteAirports(DrawingContext dc, double w, double h, Point center, double pxPerKm, string? closestId)
+    {
+        if (closestId is null) return;
+        if (!_state.TryGetValue(closestId, out var st)) return;
+        var route = RouteService.Instance.TryGet(st.Callsign);
+        if (route is null) return;
+
+        if (route.Origin is { } o) DrawAirportMarker(dc, w, h, center, pxPerKm, o, isOrigin: true);
+        if (route.Destination is { } d) DrawAirportMarker(dc, w, h, center, pxPerKm, d, isOrigin: false);
+    }
+
+    private void DrawAirportMarker(DrawingContext dc, double w, double h, Point center, double pxPerKm, AirportInfo a, bool isOrigin)
+    {
+        if (a.Latitude == 0 && a.Longitude == 0) return;
+        var km = LatLonToKm(a.Latitude, a.Longitude);
+        var p = KmToPoint(center, pxPerKm, km);
+        if (p.X < -8 || p.X > w + 8 || p.Y < -8 || p.Y > h + 8) return;
+
+        var fill = isOrigin
+            ? Color.FromArgb(0xCC, 0x52, 0xC4, 0x1A)
+            : Color.FromArgb(0xCC, 0xF9, 0xA8, 0x25);
+        var fillBrush = new SolidColorBrush(fill);
+        fillBrush.Freeze();
+
+        var ringBrush = new SolidColorBrush(IsLight ? Color.FromArgb(0xFF, 0x05, 0x0A, 0x18) : Colors.White);
+        ringBrush.Freeze();
+        var ringPen = new Pen(ringBrush, 1.0);
+        ringPen.Freeze();
+
+        dc.DrawRectangle(fillBrush, ringPen, new Rect(p.X - 5, p.Y - 5, 10, 10));
+
+        var label = string.IsNullOrEmpty(a.IataCode) ? a.IcaoCode : a.IataCode;
+        if (string.IsNullOrEmpty(label)) return;
+        var prefix = isOrigin ? "↑ " : "↓ ";
+        var ft = new FormattedText(
+            prefix + label,
+            System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            LabelFace, 11, LabelBrush, 1.0);
+        ft.SetFontWeight(FontWeights.SemiBold);
+        dc.DrawText(ft, new Point(p.X + 8, p.Y - ft.Height / 2));
     }
 
     private void DrawMap(DrawingContext dc, double w, double h, Point center, double pxPerKm)
@@ -255,12 +448,81 @@ public sealed class RadarCanvas : FrameworkElement
 
     private void DrawAttribution(DrawingContext dc, double w, double h)
     {
+        var text = IsSatellite
+            ? "© Esri, Maxar, Earthstar Geographics"
+            : "© OpenStreetMap © CARTO";
         var ft = new FormattedText(
-            "© OpenStreetMap © CARTO",
+            text,
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             LabelFace, 11, LabelDimBrush, 1.0);
         dc.DrawText(ft, new Point(w - ft.Width - 28, h - ft.Height - 6));
+    }
+
+    private static readonly Brush CityDotBrushDark =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xEE, 0xFF, 0xFF, 0xFF)));
+    private static readonly Brush CityDotBrushLight =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xDD, 0x10, 0x18, 0x28)));
+    private static readonly Brush CityDotStrokeSatellite =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xFF, 0x00, 0x00, 0x00)));
+    private static readonly Brush CityHaloBrush =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xFF, 0x00, 0x00, 0x00)));
+    private static readonly Brush CityLabelBrushLight =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xEE, 0x10, 0x18, 0x28)));
+    private static readonly Brush CityLabelBrushDark =
+        Frozen(new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)));
+
+    private void DrawCities(DrawingContext dc, double w, double h, Point center, double pxPerKm)
+    {
+        var dotFill = IsLight ? CityDotBrushLight : CityDotBrushDark;
+        var labelFill = IsLight ? CityLabelBrushLight : CityLabelBrushDark;
+        var needsHalo = IsSatellite;
+
+        Pen? dotStroke = null;
+        if (needsHalo)
+        {
+            var p = new Pen(CityDotStrokeSatellite, 1.5);
+            p.Freeze();
+            dotStroke = p;
+        }
+
+        var fontSize = needsHalo ? 12.0 : 11.0;
+
+        Pen? haloPen = null;
+        if (needsHalo)
+        {
+            var p = new Pen(CityHaloBrush, 4) { LineJoin = PenLineJoin.Round, MiterLimit = 2 };
+            p.Freeze();
+            haloPen = p;
+        }
+
+        foreach (var city in CityService.Cities)
+        {
+            var km = LatLonToKm(city.Latitude, city.Longitude);
+            var p = KmToPoint(center, pxPerKm, km);
+            if (p.X < 0 || p.X > w || p.Y < 0 || p.Y > h) continue;
+
+            dc.DrawEllipse(dotFill, dotStroke, p, 3.5, 3.5);
+
+            var ft = new FormattedText(
+                city.Name,
+                System.Globalization.CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                LabelFace, fontSize, labelFill, 1.0);
+            ft.SetFontWeight(FontWeights.SemiBold);
+
+            var labelPos = new Point(p.X + 7, p.Y - ft.Height / 2);
+            if (needsHalo && haloPen is not null)
+            {
+                var geometry = ft.BuildGeometry(labelPos);
+                dc.DrawGeometry(null, haloPen, geometry);
+                dc.DrawGeometry(labelFill, null, geometry);
+            }
+            else
+            {
+                dc.DrawText(ft, labelPos);
+            }
+        }
     }
 
     private void UpdateDisplayPositions(DateTime nowUtc)
@@ -447,26 +709,109 @@ public sealed class RadarCanvas : FrameworkElement
         var distKm = Math.Sqrt(st.SnapshotKm.X * st.SnapshotKm.X + st.SnapshotKm.Y * st.SnapshotKm.Y);
         var bearingDeg = (Math.Atan2(st.SnapshotKm.X, st.SnapshotKm.Y) * 180 / Math.PI + 360) % 360;
         var compass = BearingToCompass(bearingDeg);
+        var velocityKnots = st.Velocity * 1.943844;
         var velocityKmh = st.Velocity * 3.6;
-        var vRateArrow = st.VerticalRate > 0.5 ? "↑" : st.VerticalRate < -0.5 ? "↓" : "→";
+        var vRateArrow = st.VerticalRate > 0.5 ? "↗" : st.VerticalRate < -0.5 ? "↘" : "→";
 
-        var lines = new[]
+        var route = RouteService.Instance.TryGet(st.Callsign);
+        static string FormatAirport(AirportInfo? a)
         {
-            st.Callsign ?? "—",
-            $"{(int)st.AltitudeMeters} m  {vRateArrow}{Math.Abs(st.VerticalRate):F0} m/s",
-            $"{velocityKmh:F0} km/h",
-            $"{distKm:F1} km {compass}",
-            st.OriginCountry ?? "",
+            if (a is null) return "—";
+            var location = string.Join(", ", new[] { a.Municipality, a.Country }
+                .Where(s => !string.IsNullOrEmpty(s)));
+            var code = !string.IsNullOrEmpty(a.IataCode) ? a.IataCode : a.IcaoCode;
+            if (!string.IsNullOrEmpty(location) && !string.IsNullOrEmpty(code))
+                return $"{location} ({code})";
+            if (!string.IsNullOrEmpty(location)) return location;
+            if (!string.IsNullOrEmpty(code)) return code;
+            return "—";
+        }
+
+        var rows = new (string Label, string Value)[]
+        {
+            ("Altitude", $"{st.AltitudeMeters:N0} m  {vRateArrow} {Math.Abs(st.VerticalRate):F0} m/s"),
+            ("Speed", $"{velocityKnots:F0} kts ({velocityKmh:F0} km/h)"),
+            ("Bearing", $"{distKm:F1} km {compass} of you"),
+            ("Country", string.IsNullOrWhiteSpace(st.OriginCountry) ? "—" : st.OriginCountry!),
+            ("Operator", string.IsNullOrWhiteSpace(route?.AirlineName) ? "—" : route!.AirlineName!),
+            ("From", FormatAirport(route?.Origin)),
+            ("To", FormatAirport(route?.Destination)),
         };
 
-        double y = 16;
-        foreach (var line in lines.Where(l => !string.IsNullOrWhiteSpace(l)))
+        var photo = PhotoCache.Instance.TryGet(closestId);
+
+        const double boxLeft = 16;
+        const double boxTop = 16;
+        const double padding = 16;
+        const double contentWidth = 320;
+        const double boxWidth = contentWidth + padding * 2;
+        const double labelColumnWidth = 90;
+        const double headerSize = 20;
+        const double rowSize = 14;
+        const double creditSize = 11;
+        const double rowGap = 22;
+        const double sepGap = 12;
+
+        double scaledPhotoWidth = 0;
+        double scaledPhotoHeight = 0;
+        if (photo != null && photo.Image.PixelWidth > 0 && photo.Image.PixelHeight > 0)
         {
-            var ft = new FormattedText(
-                line, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                LabelFace, 14, LabelBrush, 1.0);
-            dc.DrawText(ft, new Point(20, y));
-            y += ft.Height + 2;
+            scaledPhotoWidth = contentWidth;
+            var ratio = photo.Image.PixelHeight / (double)photo.Image.PixelWidth;
+            scaledPhotoHeight = Math.Min(scaledPhotoWidth * ratio, 220);
+        }
+
+        double bodyHeight = headerSize + 6 + 1 + sepGap + rows.Length * rowGap;
+        double photoBlock = photo != null ? sepGap + scaledPhotoHeight + 4 + creditSize + 4 : 0;
+        double boxHeight = padding + bodyHeight + photoBlock + padding;
+
+        var borderPen = new Pen(PanelBorderBrush, 1);
+        borderPen.Freeze();
+        dc.DrawRoundedRectangle(PanelBgBrush, borderPen, new Rect(boxLeft, boxTop, boxWidth, boxHeight), 10, 10);
+
+        double y = boxTop + padding;
+        double xLabel = boxLeft + padding;
+        double xValue = xLabel + labelColumnWidth;
+
+        var header = new FormattedText(
+            string.IsNullOrWhiteSpace(st.Callsign) ? "—" : st.Callsign!,
+            System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            LabelFace, headerSize, LabelBrush, 1.0);
+        header.SetFontWeight(FontWeights.SemiBold);
+        dc.DrawText(header, new Point(xLabel, y));
+        y += headerSize + 6;
+
+        var sepPen = new Pen(PanelBorderBrush, 1);
+        sepPen.Freeze();
+        dc.DrawLine(sepPen, new Point(xLabel, y), new Point(boxLeft + boxWidth - padding, y));
+        y += sepGap;
+
+        foreach (var (label, value) in rows)
+        {
+            var lt = new FormattedText(
+                label, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                LabelFace, rowSize, LabelDimBrush, 1.0);
+            var vt = new FormattedText(
+                value, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                LabelFace, rowSize, LabelBrush, 1.0);
+            dc.DrawText(lt, new Point(xLabel, y));
+            dc.DrawText(vt, new Point(xValue, y));
+            y += rowGap;
+        }
+
+        if (photo != null && scaledPhotoHeight > 0)
+        {
+            y += sepGap - 4;
+            dc.DrawImage(photo.Image, new Rect(xLabel, y, scaledPhotoWidth, scaledPhotoHeight));
+            y += scaledPhotoHeight + 4;
+            var creditText = string.IsNullOrEmpty(photo.Photographer)
+                ? "© Planespotters.net"
+                : $"© {photo.Photographer} / Planespotters.net";
+            var ct = new FormattedText(
+                creditText, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                LabelFace, creditSize, LabelDimBrush, 1.0);
+            dc.DrawText(ct, new Point(xLabel, y));
         }
     }
 

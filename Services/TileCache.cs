@@ -11,9 +11,7 @@ public sealed class TileCache
 {
     public static readonly TileCache Instance = new();
 
-    private static readonly string TilesBase = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "FlightSaver", "tiles");
+    private static string TilesBase => Path.Combine(CacheManager.RootPath, "tiles");
 
     private static readonly HttpClient Http = CreateClient();
 
@@ -21,14 +19,19 @@ public sealed class TileCache
     private readonly ConcurrentDictionary<(int z, int x, int y), byte> _inflight = new();
     private readonly ConcurrentDictionary<(int z, int x, int y), byte> _failed = new();
 
-    private string _theme = "dark";
+    private string _theme = "satellite";
 
     public string Theme
     {
         get => _theme;
         set
         {
-            var normalized = string.Equals(value, "light", StringComparison.OrdinalIgnoreCase) ? "light" : "dark";
+            var normalized = value?.ToLowerInvariant() switch
+            {
+                "satellite" => "satellite",
+                "light" => "light",
+                _ => "dark",
+            };
             if (_theme == normalized) return;
             _theme = normalized;
             _memory.Clear();
@@ -36,7 +39,21 @@ public sealed class TileCache
         }
     }
 
-    private string Variant => _theme == "light" ? "light_nolabels" : "dark_nolabels";
+    private string CacheSubdir => _theme switch
+    {
+        "satellite" => "satellite",
+        "light" => "light_nolabels",
+        _ => "dark_nolabels",
+    };
+
+    private string FileExt => _theme == "satellite" ? ".jpg" : ".png";
+
+    private string TileUrl(int z, int x, int y) => _theme switch
+    {
+        "satellite" => $"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        "light" => $"https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png",
+        _ => $"https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png",
+    };
 
     private static HttpClient CreateClient()
     {
@@ -73,12 +90,11 @@ public sealed class TileCache
     private void Fetch((int z, int x, int y) key, string path)
     {
         if (!_inflight.TryAdd(key, 0)) return;
-        var variantAtFetch = Variant;
+        var url = TileUrl(key.z, key.x, key.y);
         _ = Task.Run(async () =>
         {
             try
             {
-                var url = $"https://a.basemaps.cartocdn.com/{variantAtFetch}/{key.z}/{key.x}/{key.y}.png";
                 var bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 await File.WriteAllBytesAsync(path, bytes).ConfigureAwait(false);
@@ -95,7 +111,7 @@ public sealed class TileCache
     }
 
     private string PathFor(int z, int x, int y) =>
-        Path.Combine(TilesBase, Variant, z.ToString(), x.ToString(), $"{y}.png");
+        Path.Combine(TilesBase, CacheSubdir, z.ToString(), x.ToString(), $"{y}{FileExt}");
 
     private static BitmapSource LoadFromFile(string path)
     {

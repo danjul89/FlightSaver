@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish single-file
+        shell: pwsh
+        run: |
+          dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+          $exe = Get-ChildItem -Path "bin/Release" -Recurse -Filter "FlightSaver.exe" |
+                 Where-Object { $_.FullName -match "publish" } |
+                 Select-Object -First 1
+          if (-not $exe) { throw "FlightSaver.exe not found after publish" }
+          $scrPath = Join-Path $exe.DirectoryName "FlightSaver.scr"
+          Move-Item -Path $exe.FullName -Destination $scrPath -Force
+          "SCR_PATH=$scrPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.SCR_PATH }}
+          generate_release_notes: true

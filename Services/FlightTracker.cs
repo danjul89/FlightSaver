@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -10,6 +11,9 @@ using FlightSaver.Models;
 namespace FlightSaver.Services;
 
 public enum ConnectionStatus { Connecting, Online, Retrying, Offline }
+public enum TrackerLogLevel { Info, Success, Warning, Error }
+
+public sealed record TrackerLogEntry(DateTime UtcTime, string Message, TrackerLogLevel Level);
 
 public sealed class FlightTracker : IDisposable
 {
@@ -18,6 +22,10 @@ public sealed class FlightTracker : IDisposable
     private readonly ConcurrentDictionary<string, Aircraft> _aircraft = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _loopTask;
+
+    private readonly object _logLock = new();
+    private readonly Queue<TrackerLogEntry> _log = new();
+    private const int MaxLogEntries = 8;
 
     public ConnectionStatus Status { get; private set; } = ConnectionStatus.Connecting;
     public DateTime LastSuccessUtc { get; private set; } = DateTime.MinValue;
@@ -32,6 +40,20 @@ public sealed class FlightTracker : IDisposable
         _client.SetCredentials(config.OpenSkyUsername, pwd);
     }
 
+    public IReadOnlyList<TrackerLogEntry> RecentLog
+    {
+        get { lock (_logLock) return _log.ToArray(); }
+    }
+
+    private void Log(string message, TrackerLogLevel level)
+    {
+        lock (_logLock)
+        {
+            _log.Enqueue(new TrackerLogEntry(DateTime.UtcNow, message, level));
+            while (_log.Count > MaxLogEntries) _log.Dequeue();
+        }
+    }
+
     public IReadOnlyCollection<Aircraft> CurrentAircraft => _aircraft.Values.ToArray();
 
     public void Start()
@@ -41,20 +63,37 @@ public sealed class FlightTracker : IDisposable
 
     private async Task LoopAsync(CancellationToken ct)
     {
+        var (latMin, latMax, lonMin, lonMax) = ComputeBoundingBox(_config.Latitude, _config.Longitude, _config.RadiusKm);
+        Log($"bbox {latMin:F2}…{latMax:F2}°N  {lonMin:F2}…{lonMax:F2}°E", TrackerLogLevel.Info);
+        Log(_config.HasCredentials ? "OpenSky: authenticated" : "OpenSky: anonymous (~5 min poll)", TrackerLogLevel.Info);
+
         var backoff = TimeSpan.FromSeconds(5);
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                await PollOnceAsync(ct).ConfigureAwait(false);
+                var (received, flying) = await PollOnceAsync(ct).ConfigureAwait(false);
                 SetStatus(ConnectionStatus.Online);
                 LastSuccessUtc = DateTime.UtcNow;
                 backoff = TimeSpan.FromSeconds(5);
+                var level = flying > 0 ? TrackerLogLevel.Success : TrackerLogLevel.Warning;
+                Log($"OK · {flying} flying / {received} in bbox", level);
                 await Task.Delay(GetPollInterval(), ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { return; }
-            catch
+            catch (HttpRequestException hre)
             {
+                var status = hre.StatusCode is { } sc ? $"HTTP {(int)sc}" : "HTTP error";
+                Log($"{status} · {Trunc(hre.Message)}", TrackerLogLevel.Error);
+                SetStatus(ConnectionStatus.Retrying);
+                await Task.Delay(backoff, ct).ConfigureAwait(false);
+                backoff = TimeSpan.FromSeconds(Math.Min(120, backoff.TotalSeconds * 2));
+                if (DateTime.UtcNow - LastSuccessUtc > TimeSpan.FromMinutes(2))
+                    SetStatus(ConnectionStatus.Offline);
+            }
+            catch (Exception ex)
+            {
+                Log($"{ex.GetType().Name}: {Trunc(ex.Message)}", TrackerLogLevel.Error);
                 SetStatus(ConnectionStatus.Retrying);
                 await Task.Delay(backoff, ct).ConfigureAwait(false);
                 backoff = TimeSpan.FromSeconds(Math.Min(120, backoff.TotalSeconds * 2));
@@ -63,6 +102,8 @@ public sealed class FlightTracker : IDisposable
             }
         }
     }
+
+    private static string Trunc(string s) => s.Length <= 60 ? s : s.Substring(0, 60) + "…";
 
     private TimeSpan GetPollInterval()
     {
@@ -77,15 +118,17 @@ public sealed class FlightTracker : IDisposable
         return onBattery ? TimeSpan.FromMinutes(5) : TimeSpan.FromMinutes(4);
     }
 
-    private async Task PollOnceAsync(CancellationToken ct)
+    private async Task<(int received, int flying)> PollOnceAsync(CancellationToken ct)
     {
         var (latMin, latMax, lonMin, lonMax) = ComputeBoundingBox(_config.Latitude, _config.Longitude, _config.RadiusKm);
         var states = await _client.GetStatesInBoxAsync(latMin, latMax, lonMin, lonMax, ct).ConfigureAwait(false);
 
         var seen = new HashSet<string>();
+        var flying = 0;
         foreach (var ac in states)
         {
             if (ac.OnGround) continue;
+            flying++;
             seen.Add(ac.Icao24);
             _aircraft.AddOrUpdate(ac.Icao24, ac, (_, existing) =>
             {
@@ -111,6 +154,7 @@ public sealed class FlightTracker : IDisposable
         }
 
         AircraftUpdated?.Invoke(this, EventArgs.Empty);
+        return (states.Count, flying);
     }
 
     public static (double latMin, double latMax, double lonMin, double lonMax) ComputeBoundingBox(double lat, double lon, int radiusKm)
