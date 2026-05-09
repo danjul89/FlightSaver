@@ -72,12 +72,12 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBox Grid.Column="0" Name="AddressBox" />
-                    <Button Grid.Column="1" Name="FetchCoordsButton" Content="Hämta koordinater" Margin="6,0,0,0" Click="OnFetchCoords" />
+                    <Button Grid.Column="1" Name="FetchCoordsButton" Content="Resolve coordinates" Margin="6,0,0,0" Click="OnFetchCoords" />
                 </Grid>
                 <TextBlock Name="GeocodeResultText" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" />
-                <Button Name="AutoDetectButton" Content="Auto-detektera position via IP" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnAutoDetect" />
+                <Button Name="AutoDetectButton" Content="Auto-detect via IP" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnAutoDetect" />
 
-                <TextBlock Style="{StaticResource SectionLabel}" Text="RADIE" />
+                <TextBlock Style="{StaticResource SectionLabel}" Text="RADIUS" />
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -87,15 +87,15 @@
                     <TextBlock Grid.Column="1" Name="RadiusLabel" Margin="8,0,0,0" VerticalAlignment="Center" Text="50 km" Width="60" />
                 </Grid>
 
-                <TextBlock Style="{StaticResource SectionLabel}" Text="KARTTEMA" />
+                <TextBlock Style="{StaticResource SectionLabel}" Text="MAP THEME" />
                 <StackPanel Orientation="Horizontal">
-                    <RadioButton Name="ThemeDarkRadio" GroupName="MapTheme" Content="Mörk" Foreground="White" Margin="0,0,20,0" IsChecked="True" />
-                    <RadioButton Name="ThemeLightRadio" GroupName="MapTheme" Content="Ljus" Foreground="White" />
+                    <RadioButton Name="ThemeDarkRadio" GroupName="MapTheme" Content="Dark" Foreground="White" Margin="0,0,20,0" IsChecked="True" />
+                    <RadioButton Name="ThemeLightRadio" GroupName="MapTheme" Content="Light" Foreground="White" />
                 </StackPanel>
 
-                <TextBlock Style="{StaticResource SectionLabel}" Text="OPENSKY-KONTO (VALFRITT)" />
+                <TextBlock Style="{StaticResource SectionLabel}" Text="OPENSKY ACCOUNT (OPTIONAL)" />
                 <TextBlock Foreground="{StaticResource LabelDim}" FontSize="11" TextWrapping="Wrap"
-                           Text="Anonyma användare får långsam uppdatering (~5 min). Skapa ett gratis konto på opensky-network.org för 30 sek-poll." />
+                           Text="Anonymous users get slow polling (~5 min). Create a free account at opensky-network.org for 30 s polling." />
                 <TextBox Name="UsernameBox" Margin="0,6,0,0" />
                 <PasswordBox Name="PasswordBox" Margin="0,6,0,0" />
                 <Grid Margin="0,6,0,0">
@@ -103,15 +103,15 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <Button Grid.Column="0" Name="TestConnectionButton" Content="Testa anslutning" Click="OnTestConnection" />
+                    <Button Grid.Column="0" Name="TestConnectionButton" Content="Test connection" Click="OnTestConnection" />
                     <TextBlock Grid.Column="1" Name="ConnectionResultText" Margin="10,0,0,0" VerticalAlignment="Center" />
                 </Grid>
             </StackPanel>
         </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="Avbryt" Width="90" Click="OnCancel" />
-            <Button Content="Spara" Width="90" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="OnSave" />
+            <Button Content="Cancel" Width="90" Click="OnCancel" />
+            <Button Content="Save" Width="90" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="OnSave" />
         </StackPanel>
     </Grid>
 </Window>

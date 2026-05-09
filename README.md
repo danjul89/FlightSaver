@@ -1,24 +1,26 @@
 # FlightSaver
 
-En Windows-skärmsläckare som visar flygplan ovanför dig i realtid via [OpenSky Network](https://opensky-network.org/).
+A Windows screensaver that shows aircraft flying above your location in real time, sourced from the [OpenSky Network](https://opensky-network.org/).
 
-Mörk radar-vy med kompass, avståndsringar, höjd-färgkodade flygplanikoner roterade efter heading, korta tonande spår, pulserande "du är här"-punkt i mitten, och info om närmaste plan.
+A live ADS-B radar overlay rendered on top of an OpenStreetMap basemap (CartoDB dark or light), with a compass, altitude-coloured aircraft icons rotated to heading, fading 5-minute trails, a pulsing "you are here" marker, and an info panel for the closest aircraft. Helicopters get a dedicated rotorcraft icon when their ADS-B category is broadcast.
 
-## Funktioner
+## Features
 
-- Sätt position via adress (geokodas via Nominatim/OpenStreetMap) eller IP-detektering
-- Justerbar radie 5-200 km
-- Per-skärm rendering på multi-monitor setup
-- 30 FPS smooth dead-reckoning mellan polls
-- Höjd-färgkodning: röd <1000 m, gul 1000-6000 m, cyan >6000 m
-- Närmaste plan får highlight + extra info (hastighet, vertical rate, ursprungsland)
-- Cached extrapolering vid offline + diskret status-prick
-- Adaptiv polling: 30 sek (registrerad + plugged in) → 5 min (anonym/batteri)
-- OpenSky-credentials valfritt, lagras encrypted med Windows DPAPI
+- Position resolved automatically via IP on first run; can be overridden by entering an address (geocoded via Nominatim/OpenStreetMap)
+- Adjustable radius from 5 to 200 km
+- Per-monitor rendering on multi-monitor setups
+- 30 FPS smooth dead-reckoning between polls
+- Altitude colour coding: red below 1000 m, yellow 1000-6000 m, cyan above 6000 m
+- Closest aircraft is highlighted with a halo and an info panel (speed, vertical rate, origin country)
+- Cached extrapolation when offline, with a small status indicator
+- Adaptive polling: 30 s (registered + plugged in) → 5 min (anonymous / on battery)
+- OpenSky credentials are optional and stored encrypted via Windows DPAPI
+- Helicopter icon for ADS-B category 8 (rotorcraft); plane silhouette for everything else
+- Map theme toggle (dark / light) in settings
 
-## Bygga
+## Building
 
-Kräver **.NET 8 SDK** på Windows. På WSL/Linux: kräver `EnableWindowsTargeting=true` (redan satt i `.csproj`) men du kan inte testa körningen från Linux — kopiera artefakten till Windows.
+Requires the **.NET 8 SDK** on Windows. On WSL/Linux: `EnableWindowsTargeting=true` is set in the `.csproj` so the project builds, but you can't run it from Linux — copy the artifact to Windows.
 
 ### Standalone single-file build
 
@@ -28,47 +30,48 @@ dotnet publish -c Release -r win-x64 \
   -p:PublishSingleFile=true
 ```
 
-Resultat: `bin/Release/net8.0-windows/win-x64/publish/FlightSaver.exe` (~70 MB).
+Output: `bin/Release/net8.0-windows10.0.17763.0/win-x64/publish/FlightSaver.exe` (~186 MB self-contained).
 
-Döp om till `.scr`:
+Rename to `.scr`:
 
 ```bash
 mv FlightSaver.exe FlightSaver.scr
 ```
 
-## Installera
+## Installation
 
-1. Kopiera `FlightSaver.scr` till Windows (om byggt på WSL/Linux)
-2. Högerklicka → **Installera**
-3. Windows öppnar Skärmsläckar-inställningarna med FlightSaver vald
-4. Klicka **Inställningar...** → ange din adress → **Hämta koordinater** → **Spara**
+1. Copy `FlightSaver.scr` to Windows (if built on WSL/Linux)
+2. Right-click → **Install**
+3. Windows opens the screensaver settings dialog with FlightSaver pre-selected
+4. Click **Settings...** → optionally enter a custom address → **Resolve coordinates** → **Save**
 
-Default-position är Sergels Torg (Stockholm) så skärmsläckaren funkar direkt även utan konfiguration.
+If no config exists on first launch, FlightSaver looks up your approximate location via `ipapi.co`. The address can be overridden manually at any time.
 
-## OpenSky-konto (valfritt)
+## OpenSky account (optional)
 
-Anonym åtkomst räcker för långsam uppdatering (~5 min). För 30 sek-uppdatering, registrera ett gratis konto på [opensky-network.org](https://opensky-network.org/) och fyll i användarnamn/lösenord under Inställningar → **Testa anslutning**.
+Anonymous access is enough for slow polling (~5 min). For 30 s polling, create a free account at [opensky-network.org](https://opensky-network.org/) and enter the username/password in Settings → **Test connection**.
 
-Lösenordet lagras encrypted med Windows DPAPI (`%APPDATA%\FlightSaver\config.json`) och kan bara dekrypteras av samma Windows-användare på samma maskin.
+The password is stored encrypted via Windows DPAPI (`%APPDATA%\FlightSaver\config.json`) and can only be decrypted by the same Windows user on the same machine.
 
-## Avsluta skärmsläckaren
+## Exiting the screensaver
 
-Mus-rörelse (>4 px), klick eller tangenttryckning avslutar.
+Mouse movement (>4 px), click, or any keypress exits.
 
-## Filstruktur
+## File layout
 
 ```
 FlightSaver/
 ├── App.xaml(.cs)              # Entry point, parses /s /p /c args
 ├── Models/
-│   ├── Aircraft.cs            # Plane state
+│   ├── Aircraft.cs            # Plane state + ADS-B category
 │   ├── AltitudeBand.cs        # Color mapping
 │   └── Config.cs              # Persisted settings
 ├── Services/
 │   ├── ConfigService.cs       # Load/save + DPAPI
 │   ├── NominatimClient.cs     # Address geocoding + IP fallback
-│   ├── OpenSkyClient.cs       # Bbox query + optional auth
-│   └── FlightTracker.cs       # Polling loop + dead reckoning state
+│   ├── OpenSkyClient.cs       # Bbox query (extended=1) + optional auth
+│   ├── FlightTracker.cs       # Polling loop + dead-reckoning state
+│   └── TileCache.cs           # Disk-cached basemap tile downloader
 ├── Rendering/
 │   └── RadarCanvas.cs         # Custom WPF render
 ├── Views/
@@ -78,6 +81,10 @@ FlightSaver/
 └── FlightSaver.csproj
 ```
 
-## Licens
+## Map tiles
 
-Privat hobbyprojekt. Använd på egen risk.
+Background tiles come from [CartoDB Basemaps](https://carto.com/basemaps/) (`dark_nolabels` / `light_nolabels`) which are free for non-commercial use with attribution. Tiles are cached on disk under `%LocalAppData%\FlightSaver\tiles\` and re-used across sessions; no labels are rendered to keep the map readable behind the radar.
+
+## Licence
+
+Personal hobby project. Use at your own risk.

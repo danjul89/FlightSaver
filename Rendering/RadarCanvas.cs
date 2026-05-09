@@ -452,7 +452,7 @@ public sealed class RadarCanvas : FrameworkElement
 
     private static string BearingToCompass(double deg)
     {
-        string[] dirs = { "N", "NÖ", "Ö", "SÖ", "S", "SV", "V", "NV" };
+        string[] dirs = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
         int ix = (int)Math.Round(deg / 45.0) % 8;
         return dirs[ix];
     }

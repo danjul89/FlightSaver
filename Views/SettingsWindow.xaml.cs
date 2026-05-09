@@ -35,20 +35,20 @@ public partial class SettingsWindow : Window
         if (!string.IsNullOrEmpty(existingPwd)) PasswordBox.Password = existingPwd;
 
         RadiusSlider.ValueChanged += (_, e) => RadiusLabel.Text = $"{(int)e.NewValue} km";
-        GeocodeResultText.Text = $"Sparad: {config.Latitude:F4}°N, {config.Longitude:F4}°E";
+        GeocodeResultText.Text = $"Saved: {config.Latitude:F4}°N, {config.Longitude:F4}°E";
     }
 
     private async void OnFetchCoords(object sender, RoutedEventArgs e)
     {
         FetchCoordsButton.IsEnabled = false;
-        GeocodeResultText.Text = "Slår upp adress...";
+        GeocodeResultText.Text = "Looking up address...";
         try
         {
             using var nominatim = new NominatimClient();
             var result = await nominatim.GeocodeAsync(AddressBox.Text);
             if (result is null)
             {
-                GeocodeResultText.Text = "Hittade ingen position för den adressen.";
+                GeocodeResultText.Text = "No position found for that address.";
                 _hasResolvedCoords = false;
                 return;
             }
@@ -59,7 +59,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            GeocodeResultText.Text = $"Fel: {ex.Message}";
+            GeocodeResultText.Text = $"Error: {ex.Message}";
             _hasResolvedCoords = false;
         }
         finally
@@ -71,14 +71,14 @@ public partial class SettingsWindow : Window
     private async void OnAutoDetect(object sender, RoutedEventArgs e)
     {
         AutoDetectButton.IsEnabled = false;
-        GeocodeResultText.Text = "Försöker IP-baserad lokalisering...";
+        GeocodeResultText.Text = "Trying IP-based location...";
         try
         {
             using var nominatim = new NominatimClient();
             var result = await nominatim.ReverseFromIpAsync();
             if (result is null)
             {
-                GeocodeResultText.Text = "IP-lokalisering misslyckades.";
+                GeocodeResultText.Text = "IP location failed.";
                 return;
             }
             _resolvedLat = result.Latitude;
@@ -89,7 +89,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            GeocodeResultText.Text = $"Fel: {ex.Message}";
+            GeocodeResultText.Text = $"Error: {ex.Message}";
         }
         finally
         {
@@ -100,7 +100,7 @@ public partial class SettingsWindow : Window
     private async void OnTestConnection(object sender, RoutedEventArgs e)
     {
         TestConnectionButton.IsEnabled = false;
-        ConnectionResultText.Text = "Testar...";
+        ConnectionResultText.Text = "Testing...";
         ConnectionResultText.Foreground = System.Windows.Media.Brushes.Gray;
 
         var user = UsernameBox.Text.Trim();
@@ -122,13 +122,13 @@ public partial class SettingsWindow : Window
             if (resp.IsSuccessStatusCode)
             {
                 ConnectionResultText.Text = string.IsNullOrEmpty(user)
-                    ? "OK (anonym)"
-                    : "OK (autentiserad)";
+                    ? "OK (anonymous)"
+                    : "OK (authenticated)";
                 ConnectionResultText.Foreground = System.Windows.Media.Brushes.LightGreen;
             }
             else if ((int)resp.StatusCode == 401)
             {
-                ConnectionResultText.Text = "Fel användarnamn/lösenord";
+                ConnectionResultText.Text = "Wrong username/password";
                 ConnectionResultText.Foreground = System.Windows.Media.Brushes.Salmon;
             }
             else
@@ -139,7 +139,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            ConnectionResultText.Text = $"Fel: {ex.Message}";
+            ConnectionResultText.Text = $"Error: {ex.Message}";
             ConnectionResultText.Foreground = System.Windows.Media.Brushes.Salmon;
         }
         finally
@@ -152,7 +152,7 @@ public partial class SettingsWindow : Window
     {
         if (!_hasResolvedCoords)
         {
-            MessageBox.Show("Hämta koordinater för adressen först.", "FlightSaver",
+            MessageBox.Show("Resolve coordinates for the address first.", "FlightSaver",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
