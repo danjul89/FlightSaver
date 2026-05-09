@@ -29,6 +29,25 @@ public sealed class RadarCanvas : FrameworkElement
     private static readonly Geometry PlaneGeometry = BuildPlaneGeometry();
     private static readonly Geometry HelicopterGeometry = BuildHelicopterGeometry();
 
+    private static readonly string[] HelicopterCallsignPrefixes =
+    {
+        "POL", "POLITI", "POLIISI",
+        "HEMS", "MEDIC", "LIFE", "RESCUE",
+        "COAST", "USCG", "KYV",
+    };
+
+    private static bool IsHelicopterByCallsign(string? callsign)
+    {
+        if (string.IsNullOrWhiteSpace(callsign)) return false;
+        var upper = callsign.Trim().ToUpperInvariant();
+        foreach (var prefix in HelicopterCallsignPrefixes)
+        {
+            if (!upper.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            if (upper.Length > prefix.Length && char.IsDigit(upper[prefix.Length])) return true;
+        }
+        return false;
+    }
+
     private bool IsLight => string.Equals(_config.MapTheme, "light", StringComparison.OrdinalIgnoreCase);
     private Brush LabelBrush => IsLight ? LabelBrushLight : LabelBrushDark;
     private Brush LabelDimBrush => IsLight ? LabelDimBrushLight : LabelDimBrushDark;
@@ -366,7 +385,8 @@ public sealed class RadarCanvas : FrameworkElement
         dc.PushTransform(new RotateTransform(st.HeadingRad * 180.0 / Math.PI));
         dc.PushTransform(new ScaleTransform(scale, scale));
 
-        if (st.Category == 8)
+        var isHelicopter = st.Category == 8 || IsHelicopterByCallsign(st.Callsign);
+        if (isHelicopter)
         {
             var rotorBrush = new SolidColorBrush(Color.FromArgb(0x33, color.R, color.G, color.B));
             rotorBrush.Freeze();
