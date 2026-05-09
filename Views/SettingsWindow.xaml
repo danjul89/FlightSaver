@@ -1,0 +1,117 @@
+<Window x:Class="FlightSaver.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="FlightSaver Settings"
+        Width="540"
+        Height="640"
+        Background="#0A1428"
+        Foreground="White"
+        FontFamily="Segoe UI"
+        FontSize="13"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize">
+    <Window.Resources>
+        <SolidColorBrush x:Key="FieldBg" Color="#152038" />
+        <SolidColorBrush x:Key="FieldBorder" Color="#2A3A5C" />
+        <SolidColorBrush x:Key="LabelDim" Color="#88FFFFFF" />
+        <SolidColorBrush x:Key="Accent" Color="#34D399" />
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource FieldBg}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource FieldBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="CaretBrush" Value="White" />
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="{StaticResource FieldBg}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource FieldBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="CaretBrush" Value="White" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource FieldBg}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource FieldBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{StaticResource Accent}" />
+            <Setter Property="Foreground" Value="#0A1428" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="SectionLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource LabelDim}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,12,0,4" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="FlightSaver" FontSize="22" FontWeight="Light" />
+            <TextBlock Text="Live aircraft above your location" Foreground="{StaticResource LabelDim}" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Style="{StaticResource SectionLabel}" Text="ADDRESS" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" Name="AddressBox" />
+                    <Button Grid.Column="1" Name="FetchCoordsButton" Content="Hämta koordinater" Margin="6,0,0,0" Click="OnFetchCoords" />
+                </Grid>
+                <TextBlock Name="GeocodeResultText" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" />
+                <Button Name="AutoDetectButton" Content="Auto-detektera position via IP" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnAutoDetect" />
+
+                <TextBlock Style="{StaticResource SectionLabel}" Text="RADIE" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Slider Grid.Column="0" Name="RadiusSlider" Minimum="5" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" Value="50" />
+                    <TextBlock Grid.Column="1" Name="RadiusLabel" Margin="8,0,0,0" VerticalAlignment="Center" Text="50 km" Width="60" />
+                </Grid>
+
+                <TextBlock Style="{StaticResource SectionLabel}" Text="KARTTEMA" />
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton Name="ThemeDarkRadio" GroupName="MapTheme" Content="Mörk" Foreground="White" Margin="0,0,20,0" IsChecked="True" />
+                    <RadioButton Name="ThemeLightRadio" GroupName="MapTheme" Content="Ljus" Foreground="White" />
+                </StackPanel>
+
+                <TextBlock Style="{StaticResource SectionLabel}" Text="OPENSKY-KONTO (VALFRITT)" />
+                <TextBlock Foreground="{StaticResource LabelDim}" FontSize="11" TextWrapping="Wrap"
+                           Text="Anonyma användare får långsam uppdatering (~5 min). Skapa ett gratis konto på opensky-network.org för 30 sek-poll." />
+                <TextBox Name="UsernameBox" Margin="0,6,0,0" />
+                <PasswordBox Name="PasswordBox" Margin="0,6,0,0" />
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Name="TestConnectionButton" Content="Testa anslutning" Click="OnTestConnection" />
+                    <TextBlock Grid.Column="1" Name="ConnectionResultText" Margin="10,0,0,0" VerticalAlignment="Center" />
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Avbryt" Width="90" Click="OnCancel" />
+            <Button Content="Spara" Width="90" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="OnSave" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,11 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+publish/
+*.scr
+!FlightSaver.scr
+.agents/
+.claude/
+skills-lock.json

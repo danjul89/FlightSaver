@@ -1,0 +1,12 @@
+<Window x:Class="FlightSaver.Views.ScreensaverWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        AllowsTransparency="False"
+        Background="Black"
+        Cursor="None"
+        Topmost="True">
+    <Grid Name="RootGrid" />
+</Window>
