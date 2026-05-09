@@ -18,7 +18,25 @@ A live ADS-B radar overlay rendered on top of an OpenStreetMap basemap (CartoDB 
 - Helicopter icon for ADS-B category 8 (rotorcraft); plane silhouette for everything else
 - Map theme toggle (dark / light) in settings
 
-## Building
+## Quick install (recommended)
+
+Open PowerShell (any version) and paste:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/danjul89/FlightSaver/main/install.ps1 | iex
+```
+
+This downloads the latest `FlightSaver.scr` from [GitHub Releases](https://github.com/danjul89/FlightSaver/releases/latest), copies it to `C:\Windows\System32\` (UAC prompt — click Yes), and opens the Windows screensaver dialog with FlightSaver pre-selected. Click **Settings...** to configure or just **OK** — sane defaults are used (auto IP location, satellite map, 50 km radius).
+
+## Manual install
+
+1. Download `FlightSaver.scr` from the [latest release](https://github.com/danjul89/FlightSaver/releases/latest)
+2. Right-click the file in Explorer → **Install**
+3. The screensaver settings dialog opens; click **Settings...** to configure if you want
+
+If no config exists on first launch, FlightSaver looks up your approximate location via `ipapi.co`. The address can be overridden manually under **Settings → Location → Manual**.
+
+## Build from source
 
 Requires the **.NET 8 SDK** on Windows. On WSL/Linux: `EnableWindowsTargeting=true` is set in the `.csproj` so the project builds, but you can't run it from Linux — copy the artifact to Windows.
 
@@ -38,14 +56,7 @@ Rename to `.scr`:
 mv FlightSaver.exe FlightSaver.scr
 ```
 
-## Installation
-
-1. Copy `FlightSaver.scr` to Windows (if built on WSL/Linux)
-2. Right-click → **Install**
-3. Windows opens the screensaver settings dialog with FlightSaver pre-selected
-4. Click **Settings...** → optionally enter a custom address → **Resolve coordinates** → **Save**
-
-If no config exists on first launch, FlightSaver looks up your approximate location via `ipapi.co`. The address can be overridden manually at any time.
+GitHub Actions builds and publishes a release automatically on every `v*.*.*` tag push (see [`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## OpenSky account (optional)
 
