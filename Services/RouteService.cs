@@ -15,7 +15,7 @@ public sealed record AirportInfo(
     double Latitude,
     double Longitude);
 
-public sealed record FlightRoute(AirportInfo? Origin, AirportInfo? Destination, string? AirlineName);
+public sealed record FlightRoute(AirportInfo? Origin, AirportInfo? Destination, string? AirlineName, string? AircraftType);
 
 public sealed class RouteService
 {
@@ -72,7 +72,17 @@ public sealed class RouteService
                     if (airline.TryGetProperty("name", out var an) && an.ValueKind == JsonValueKind.String)
                         airlineName = an.GetString();
                 }
-                _memory[callsign] = new FlightRoute(origin, destination, airlineName);
+
+                string? aircraftType = null;
+                if (fr.TryGetProperty("aircraft", out var aircraft) && aircraft.ValueKind == JsonValueKind.Object)
+                {
+                    string? mfr = aircraft.TryGetProperty("manufacturer", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : null;
+                    string? icaoType = aircraft.TryGetProperty("icao_type", out var it) && it.ValueKind == JsonValueKind.String ? it.GetString() : null;
+                    if (!string.IsNullOrEmpty(icaoType))
+                        aircraftType = string.IsNullOrEmpty(mfr) ? icaoType : $"{mfr} {icaoType}";
+                }
+
+                _memory[callsign] = new FlightRoute(origin, destination, airlineName, aircraftType);
             }
             catch
             {

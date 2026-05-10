@@ -528,6 +528,7 @@
                             <UniformGrid Rows="1">
                                 <RadioButton Name="FocusClosestRadio" Style="{StaticResource SegmentRadio}" GroupName="FocusMode" Content="Closest" IsChecked="True" Click="OnFocusModeChanged" />
                                 <RadioButton Name="FocusCycleRadio" Style="{StaticResource SegmentRadio}" GroupName="FocusMode" Content="Cycle through all" Click="OnFocusModeChanged" />
+                                <RadioButton Name="FocusPlainRadio" Style="{StaticResource SegmentRadio}" GroupName="FocusMode" Content="Plain list" Click="OnFocusModeChanged" />
                             </UniformGrid>
                         </Border>
 
@@ -542,7 +543,7 @@
                             </ComboBox>
                         </StackPanel>
                         <TextBlock Style="{StaticResource HelpText}" Margin="0,8,0,0"
-                                   Text="Closest: the nearest aircraft is always featured. Cycle: the panel rotates through every visible aircraft, sorted by distance." />
+                                   Text="Closest: the nearest aircraft is always featured. Cycle: zooms in to 2 km around each aircraft in turn. Plain: shows only a text list of the three nearest aircraft with no map." />
                     </StackPanel>
                 </Border>
 

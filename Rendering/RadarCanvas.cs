@@ -183,18 +183,23 @@ public sealed class RadarCanvas : FrameworkElement
 
         dc.DrawRectangle(BackgroundBrush, null, new Rect(0, 0, w, h));
 
-        var center = new Point(w / 2, h / 2);
-        var radiusPx = Math.Min(w, h) * 0.45;
-        var pxPerKm = radiusPx / _config.RadiusKm;
-
-        DrawMap(dc, w, h, center, pxPerKm);
-        DrawCities(dc, w, h, center, pxPerKm);
-        DrawCompass(dc, center, radiusPx);
-
         var nowUtc = DateTime.UtcNow;
         UpdateDisplayPositions(nowUtc);
 
-        DrawTrails(dc, center, pxPerKm);
+        var isPlain = string.Equals(_config.FocusMode, "plain", StringComparison.OrdinalIgnoreCase);
+        var isCycle = string.Equals(_config.FocusMode, "cycle", StringComparison.OrdinalIgnoreCase);
+
+        if (isPlain)
+        {
+            DrawPlainPanel(dc, w, h, nowUtc);
+            DrawStatusIndicator(dc, w, h);
+            DrawTrackerLog(dc, w, h);
+            DrawUpdateHint(dc, w, h);
+            return;
+        }
+
+        var center = new Point(w / 2, h / 2);
+        var radiusPx = Math.Min(w, h) * 0.45;
 
         var aircraftToDraw = _state
             .Where(kv => kv.Value.DisplayKm.HasValue && (nowUtc - kv.Value.LastUpdateUtc) < TimeSpan.FromSeconds(120))
@@ -202,11 +207,32 @@ public sealed class RadarCanvas : FrameworkElement
 
         var focusedId = DetermineFocusedId(aircraftToDraw, nowUtc);
 
-        foreach (var (id, st) in aircraftToDraw)
-            DrawPlane(dc, center, pxPerKm, st, isClosest: id == focusedId);
+        Point viewCenterKm = default;
+        double pxPerKm = radiusPx / _config.RadiusKm;
+        double mapCenterLat = _config.Latitude;
+        double mapCenterLon = _config.Longitude;
 
-        DrawClosestRouteAirports(dc, w, h, center, pxPerKm, focusedId);
-        DrawCenter(dc, center);
+        if (isCycle && focusedId is not null
+            && _state.TryGetValue(focusedId, out var focusedSt)
+            && focusedSt.DisplayKm.HasValue)
+        {
+            viewCenterKm = focusedSt.DisplayKm.Value;
+            pxPerKm = radiusPx / 2.0;
+            mapCenterLat = _config.Latitude + viewCenterKm.Y / 111.0;
+            mapCenterLon = _config.Longitude + viewCenterKm.X / (111.0 * Math.Cos(_config.Latitude * Math.PI / 180.0));
+        }
+
+        DrawMap(dc, w, h, center, pxPerKm, mapCenterLat, mapCenterLon);
+        DrawCities(dc, w, h, center, pxPerKm, viewCenterKm);
+        DrawCompass(dc, center, radiusPx);
+        DrawTrails(dc, center, pxPerKm, viewCenterKm);
+
+        foreach (var (id, st) in aircraftToDraw)
+            DrawPlane(dc, center, pxPerKm, st, isClosest: id == focusedId, viewKm: viewCenterKm);
+
+        DrawClosestRouteAirports(dc, w, h, center, pxPerKm, focusedId, viewCenterKm);
+        var userScreenPos = KmToPoint(center, pxPerKm, default, viewCenterKm);
+        DrawCenter(dc, userScreenPos);
         DrawStatusIndicator(dc, w, h);
         DrawClosestInfoPanel(dc, focusedId);
         DrawTrackerLog(dc, w, h);
@@ -350,22 +376,22 @@ public sealed class RadarCanvas : FrameworkElement
         dc.DrawText(ft, new Point(20, h - ft.Height - 6));
     }
 
-    private void DrawClosestRouteAirports(DrawingContext dc, double w, double h, Point center, double pxPerKm, string? closestId)
+    private void DrawClosestRouteAirports(DrawingContext dc, double w, double h, Point center, double pxPerKm, string? closestId, Point viewKm = default)
     {
         if (closestId is null) return;
         if (!_state.TryGetValue(closestId, out var st)) return;
         var route = RouteService.Instance.TryGet(st.Callsign);
         if (route is null) return;
 
-        if (route.Origin is { } o) DrawAirportMarker(dc, w, h, center, pxPerKm, o, isOrigin: true);
-        if (route.Destination is { } d) DrawAirportMarker(dc, w, h, center, pxPerKm, d, isOrigin: false);
+        if (route.Origin is { } o) DrawAirportMarker(dc, w, h, center, pxPerKm, o, isOrigin: true, viewKm);
+        if (route.Destination is { } d) DrawAirportMarker(dc, w, h, center, pxPerKm, d, isOrigin: false, viewKm);
     }
 
-    private void DrawAirportMarker(DrawingContext dc, double w, double h, Point center, double pxPerKm, AirportInfo a, bool isOrigin)
+    private void DrawAirportMarker(DrawingContext dc, double w, double h, Point center, double pxPerKm, AirportInfo a, bool isOrigin, Point viewKm = default)
     {
         if (a.Latitude == 0 && a.Longitude == 0) return;
         var km = LatLonToKm(a.Latitude, a.Longitude);
-        var p = KmToPoint(center, pxPerKm, km);
+        var p = KmToPoint(center, pxPerKm, km, viewKm);
         if (p.X < -8 || p.X > w + 8 || p.Y < -8 || p.Y > h + 8) return;
 
         var fill = isOrigin
@@ -393,11 +419,11 @@ public sealed class RadarCanvas : FrameworkElement
         dc.DrawText(ft, new Point(p.X + 8, p.Y - ft.Height / 2));
     }
 
-    private void DrawMap(DrawingContext dc, double w, double h, Point center, double pxPerKm)
+    private void DrawMap(DrawingContext dc, double w, double h, Point center, double pxPerKm, double mapLat, double mapLon)
     {
         if (pxPerKm <= 0) return;
-        double lat = _config.Latitude;
-        double lon = _config.Longitude;
+        double lat = mapLat;
+        double lon = mapLon;
 
         const double EarthCircM = 40075016.686;
         double mPerPxAt0 = EarthCircM * Math.Cos(lat * Math.PI / 180.0) / 256.0;
@@ -472,7 +498,7 @@ public sealed class RadarCanvas : FrameworkElement
     private static readonly Brush CityLabelBrushDark =
         Frozen(new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)));
 
-    private void DrawCities(DrawingContext dc, double w, double h, Point center, double pxPerKm)
+    private void DrawCities(DrawingContext dc, double w, double h, Point center, double pxPerKm, Point viewKm = default)
     {
         var dotFill = IsLight ? CityDotBrushLight : CityDotBrushDark;
         var labelFill = IsLight ? CityLabelBrushLight : CityLabelBrushDark;
@@ -499,7 +525,7 @@ public sealed class RadarCanvas : FrameworkElement
         foreach (var city in CityService.Cities)
         {
             var km = LatLonToKm(city.Latitude, city.Longitude);
-            var p = KmToPoint(center, pxPerKm, km);
+            var p = KmToPoint(center, pxPerKm, km, viewKm);
             if (p.X < 0 || p.X > w || p.Y < 0 || p.Y > h) continue;
 
             dc.DrawEllipse(dotFill, dotStroke, p, 3.5, 3.5);
@@ -594,7 +620,7 @@ public sealed class RadarCanvas : FrameworkElement
     private const double TrailMaxAgeSeconds = 300.0;
     private const byte TrailMaxAlpha = 150;
 
-    private void DrawTrails(DrawingContext dc, Point center, double pxPerKm)
+    private void DrawTrails(DrawingContext dc, Point center, double pxPerKm, Point viewKm = default)
     {
         var nowUtc = DateTime.UtcNow;
         foreach (var st in _state.Values)
@@ -612,17 +638,17 @@ public sealed class RadarCanvas : FrameworkElement
                 brush.Freeze();
                 var pen = new Pen(brush, 1.5);
                 pen.Freeze();
-                dc.DrawLine(pen, KmToPoint(center, pxPerKm, ptPrev), KmToPoint(center, pxPerKm, ptThen));
+                dc.DrawLine(pen, KmToPoint(center, pxPerKm, ptPrev, viewKm), KmToPoint(center, pxPerKm, ptThen, viewKm));
             }
             while (st.Trail.Count > 0 && (nowUtc - st.Trail[0].time).TotalSeconds > TrailMaxAgeSeconds)
                 st.Trail.RemoveAt(0);
         }
     }
 
-    private void DrawPlane(DrawingContext dc, Point center, double pxPerKm, AircraftState st, bool isClosest)
+    private void DrawPlane(DrawingContext dc, Point center, double pxPerKm, AircraftState st, bool isClosest, Point viewKm = default)
     {
         if (!st.DisplayKm.HasValue) return;
-        var pos = KmToPoint(center, pxPerKm, st.DisplayKm.Value);
+        var pos = KmToPoint(center, pxPerKm, st.DisplayKm.Value, viewKm);
         if (Math.Abs(pos.X - center.X) > center.X || Math.Abs(pos.Y - center.Y) > center.Y) return;
 
         var color = BandColor(st.Band);
@@ -729,6 +755,7 @@ public sealed class RadarCanvas : FrameworkElement
 
         var rows = new (string Label, string Value)[]
         {
+            ("Type", string.IsNullOrWhiteSpace(route?.AircraftType) ? "—" : route!.AircraftType!),
             ("Altitude", $"{st.AltitudeMeters:N0} m  {vRateArrow} {Math.Abs(st.VerticalRate):F0} m/s"),
             ("Speed", $"{velocityKnots:F0} kts ({velocityKmh:F0} km/h)"),
             ("Bearing", $"{distKm:F1} km {compass} of you"),
@@ -815,6 +842,182 @@ public sealed class RadarCanvas : FrameworkElement
         }
     }
 
+    private void DrawPlainPanel(DrawingContext dc, double w, double h, DateTime nowUtc)
+    {
+        var sorted = _state
+            .Where(kv => kv.Value.DisplayKm.HasValue && (nowUtc - kv.Value.LastUpdateUtc) < TimeSpan.FromSeconds(120))
+            .OrderBy(kv => kv.Value.SnapshotKm.X * kv.Value.SnapshotKm.X + kv.Value.SnapshotKm.Y * kv.Value.SnapshotKm.Y)
+            .Take(3)
+            .ToList();
+
+        foreach (var (_, st) in sorted)
+            RouteService.Instance.TryGet(st.Callsign);
+
+        const double padX  = 60;   // outer margin each side
+        const double rowPad = 28;  // inner horizontal padding
+        const double titleH  = 50;
+        const double headerH = 26;
+        const double rowH    = 46;
+        const double dataSize   = 19;
+        const double headerSize = 11;
+        const double titleSize  = 14;
+
+        double boardW = Math.Max(w - padX * 2, 800);
+        double boardH = titleH + 1 + headerH + 1 + Math.Max(sorted.Count, 1) * rowH;
+        double boardX = (w - boardW) / 2;
+        double boardY = (h - boardH) / 2;
+        double xL = boardX + rowPad;
+        double cW = boardW - rowPad * 2;
+
+        // Column x offsets (proportional to content width)
+        double cFlight   = 0;
+        double cAircraft = cW * 0.135;
+        double cFrom     = cW * 0.310;
+        double cTo       = cW * 0.500;
+        double cAlt      = cW * 0.695;
+        double cSpeed    = cW * 0.805;
+        double cBearing  = cW * 0.890;
+
+        // Measure representative text heights once
+        double dataH  = MakeFT("X", dataSize,   LabelBrush).Height;
+        double hdrTH  = MakeFT("X", headerSize, LabelDimBrush).Height;
+        double titTH  = MakeFT("X", titleSize,  LabelBrush).Height;
+
+        // Board background — near-black, full width panel
+        var bgBrush = new SolidColorBrush(Color.FromArgb(0xF4, 0x04, 0x06, 0x10));
+        bgBrush.Freeze();
+        dc.DrawRoundedRectangle(bgBrush, null, new Rect(boardX, boardY, boardW, boardH), 4, 4);
+
+        // Separator pen (dim horizontal rules)
+        var sepBrush = new SolidColorBrush(Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF));
+        sepBrush.Freeze();
+        var sepPen = new Pen(sepBrush, 1);
+        sepPen.Freeze();
+
+        // Alternating row shading
+        var rowAltBrush = new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+        rowAltBrush.Freeze();
+
+        double y = boardY;
+
+        // ── Title row ──────────────────────────────────────────────
+        dc.DrawText(MakeFT("NEARBY AIRCRAFT", titleSize, LabelBrush, FontWeights.SemiBold),
+            new Point(xL, y + (titleH - titTH) / 2));
+
+        // Live dot + local clock on the right
+        var localTime = nowUtc.ToLocalTime().ToString("HH:mm");
+        var timeFT = MakeFT(localTime, titleSize, LabelDimBrush);
+        double timeX = boardX + boardW - rowPad - timeFT.Width;
+        var liveBrush = new SolidColorBrush(Color.FromRgb(0x34, 0xD3, 0x99));
+        liveBrush.Freeze();
+        dc.DrawEllipse(liveBrush, null, new Point(timeX - 13, boardY + titleH / 2), 4, 4);
+        dc.DrawText(timeFT, new Point(timeX, y + (titleH - titTH) / 2));
+        y += titleH;
+
+        // ── Separator + column headers ──────────────────────────────
+        dc.DrawLine(sepPen, new Point(boardX, y), new Point(boardX + boardW, y));
+        y += 1;
+
+        double hdrY = y + (headerH - hdrTH) / 2;
+        DrawColHeader(dc, "FLIGHT",   xL + cFlight,   hdrY, headerSize);
+        DrawColHeader(dc, "AIRCRAFT", xL + cAircraft, hdrY, headerSize);
+        DrawColHeader(dc, "FROM",     xL + cFrom,     hdrY, headerSize);
+        DrawColHeader(dc, "TO",       xL + cTo,       hdrY, headerSize);
+        DrawColHeader(dc, "ALT",      xL + cAlt,      hdrY, headerSize);
+        DrawColHeader(dc, "SPEED",    xL + cSpeed,    hdrY, headerSize);
+        DrawColHeader(dc, "BEARING",  xL + cBearing,  hdrY, headerSize);
+        y += headerH;
+
+        // ── Separator ───────────────────────────────────────────────
+        dc.DrawLine(sepPen, new Point(boardX, y), new Point(boardX + boardW, y));
+        y += 1;
+
+        if (sorted.Count == 0)
+        {
+            dc.DrawText(MakeFT("No aircraft in range", dataSize, LabelDimBrush),
+                new Point(xL, y + (rowH - dataH) / 2));
+            return;
+        }
+
+        // ── Data rows ───────────────────────────────────────────────
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            var (id, st) = sorted[i];
+            var route = RouteService.Instance.TryGet(st.Callsign);
+
+            if (i % 2 == 1)
+                dc.DrawRectangle(rowAltBrush, null, new Rect(boardX, y, boardW, rowH));
+
+            double dy = y + (rowH - dataH) / 2;
+
+            // FLIGHT
+            dc.DrawText(MakeFT(st.Callsign ?? id, dataSize, LabelBrush, FontWeights.SemiBold),
+                new Point(xL + cFlight, dy));
+
+            // AIRCRAFT TYPE
+            dc.DrawText(MakeFT(route?.AircraftType ?? "—", dataSize - 2, LabelDimBrush),
+                new Point(xL + cAircraft, dy + 1));
+
+            // FROM / TO
+            dc.DrawText(MakeFT(FormatAirportShort(route?.Origin),      dataSize - 2, LabelBrush),
+                new Point(xL + cFrom, dy + 1));
+            dc.DrawText(MakeFT(FormatAirportShort(route?.Destination),  dataSize - 2, LabelBrush),
+                new Point(xL + cTo,   dy + 1));
+
+            // ALT
+            dc.DrawText(MakeFT($"{st.AltitudeMeters:N0} m", dataSize - 2, LabelBrush),
+                new Point(xL + cAlt, dy + 1));
+
+            // SPEED
+            dc.DrawText(MakeFT($"{st.Velocity * 1.943844:F0} kt", dataSize - 2, LabelBrush),
+                new Point(xL + cSpeed, dy + 1));
+
+            // BEARING
+            var distKm  = Math.Sqrt(st.SnapshotKm.X * st.SnapshotKm.X + st.SnapshotKm.Y * st.SnapshotKm.Y);
+            var bearing = (Math.Atan2(st.SnapshotKm.X, st.SnapshotKm.Y) * 180 / Math.PI + 360) % 360;
+            dc.DrawText(MakeFT($"{distKm:F1} km {BearingToCompass(bearing)}", dataSize - 2, LabelBrush),
+                new Point(xL + cBearing, dy + 1));
+
+            // VERTICAL TREND arrow — right-aligned, color-coded
+            Color arrowColor;
+            string arrow;
+            if (st.VerticalRate > 0.5)       { arrow = "↑"; arrowColor = Color.FromRgb(0x34, 0xD3, 0x99); }
+            else if (st.VerticalRate < -0.5)  { arrow = "↓"; arrowColor = Color.FromRgb(0xFB, 0x71, 0x85); }
+            else                              { arrow = "→"; arrowColor = Color.FromRgb(0xFC, 0xD3, 0x4D); }
+
+            var arrowBrush = new SolidColorBrush(arrowColor);
+            arrowBrush.Freeze();
+            var arrowFT = MakeFT(arrow, dataSize, arrowBrush, FontWeights.Bold);
+            dc.DrawText(arrowFT, new Point(boardX + boardW - rowPad - arrowFT.Width, dy));
+
+            y += rowH;
+        }
+    }
+
+    private void DrawColHeader(DrawingContext dc, string text, double x, double y, double size) =>
+        dc.DrawText(MakeFT(text, size, LabelDimBrush, FontWeights.SemiBold), new Point(x, y));
+
+    private FormattedText MakeFT(string text, double size, Brush brush, FontWeight? weight = null)
+    {
+        var ft = new FormattedText(text,
+            System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            LabelFace, size, brush, 1.0);
+        if (weight.HasValue) ft.SetFontWeight(weight.Value);
+        return ft;
+    }
+
+    private static string FormatAirportShort(AirportInfo? a)
+    {
+        if (a is null) return "—";
+        var code = !string.IsNullOrEmpty(a.IataCode) ? a.IataCode : a.IcaoCode;
+        if (!string.IsNullOrEmpty(a.Municipality) && !string.IsNullOrEmpty(code))
+            return $"{a.Municipality} ({code})";
+        if (!string.IsNullOrEmpty(code)) return code;
+        if (!string.IsNullOrEmpty(a.Name)) return a.Name;
+        return "—";
+    }
+
     private static string BearingToCompass(double deg)
     {
         string[] dirs = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
@@ -841,8 +1044,8 @@ public sealed class RadarCanvas : FrameworkElement
         return new Point(dLonKm, dLatKm);
     }
 
-    private static Point KmToPoint(Point center, double pxPerKm, Point km) =>
-        new(center.X + km.X * pxPerKm, center.Y - km.Y * pxPerKm);
+    private static Point KmToPoint(Point center, double pxPerKm, Point km, Point viewKm = default) =>
+        new(center.X + (km.X - viewKm.X) * pxPerKm, center.Y - (km.Y - viewKm.Y) * pxPerKm);
 
     private sealed class AircraftState
     {

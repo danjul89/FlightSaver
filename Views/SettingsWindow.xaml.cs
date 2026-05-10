@@ -48,8 +48,10 @@ public partial class SettingsWindow : Window
         ThemeLightRadio.IsChecked = theme == "light";
         ThemeDarkRadio.IsChecked = theme == "dark";
         var isCycle = string.Equals(config.FocusMode, "cycle", StringComparison.OrdinalIgnoreCase);
+        var isPlain = string.Equals(config.FocusMode, "plain", StringComparison.OrdinalIgnoreCase);
         FocusCycleRadio.IsChecked = isCycle;
-        FocusClosestRadio.IsChecked = !isCycle;
+        FocusPlainRadio.IsChecked = isPlain;
+        FocusClosestRadio.IsChecked = !isCycle && !isPlain;
         CycleIntervalSection.Visibility = isCycle ? Visibility.Visible : Visibility.Collapsed;
         SelectCycleInterval(config.CycleIntervalSeconds);
         DebugLogOnRadio.IsChecked = config.ShowDebugLog;
@@ -175,7 +177,9 @@ public partial class SettingsWindow : Window
         _config.MapTheme = ThemeSatelliteRadio.IsChecked == true ? "satellite"
             : ThemeLightRadio.IsChecked == true ? "light"
             : "dark";
-        _config.FocusMode = FocusCycleRadio.IsChecked == true ? "cycle" : "closest";
+        _config.FocusMode = FocusCycleRadio.IsChecked == true ? "cycle"
+            : FocusPlainRadio.IsChecked == true ? "plain"
+            : "closest";
         _config.CycleIntervalSeconds = ReadCycleInterval();
         _config.ShowDebugLog = DebugLogOnRadio.IsChecked == true;
         _config.CacheLimitMb = ReadCacheLimit();
