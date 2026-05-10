@@ -156,6 +156,9 @@ public sealed class RadarCanvas : FrameworkElement
                 if (st.FirstSeenUtc == default) st.FirstSeenUtc = nowUtc;
             }
 
+            foreach (var ac in _tracker.CurrentAircraft)
+                AircraftTypeService.Instance.TryGet(ac.Icao24);
+
             var seenIds = _tracker.CurrentAircraft.Select(a => a.Icao24).ToHashSet();
             foreach (var key in _state.Keys.ToArray())
             {
@@ -753,9 +756,10 @@ public sealed class RadarCanvas : FrameworkElement
             return "—";
         }
 
+        var aircraftType = AircraftTypeService.Instance.TryGet(closestId);
         var rows = new (string Label, string Value)[]
         {
-            ("Type", string.IsNullOrWhiteSpace(route?.AircraftType) ? "—" : route!.AircraftType!),
+            ("Type", string.IsNullOrWhiteSpace(aircraftType) ? "—" : aircraftType!),
             ("Altitude", $"{st.AltitudeMeters:N0} m  {vRateArrow} {Math.Abs(st.VerticalRate):F0} m/s"),
             ("Speed", $"{velocityKnots:F0} kts ({velocityKmh:F0} km/h)"),
             ("Bearing", $"{distKm:F1} km {compass} of you"),
@@ -955,7 +959,7 @@ public sealed class RadarCanvas : FrameworkElement
                 new Point(xL + cFlight, dy));
 
             // AIRCRAFT TYPE
-            dc.DrawText(MakeFT(route?.AircraftType ?? "—", dataSize - 2, LabelDimBrush),
+            dc.DrawText(MakeFT(AircraftTypeService.Instance.TryGet(id) ?? "—", dataSize - 2, LabelDimBrush),
                 new Point(xL + cAircraft, dy + 1));
 
             // FROM / TO
