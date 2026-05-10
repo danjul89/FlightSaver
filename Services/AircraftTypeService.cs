@@ -32,26 +32,12 @@ public sealed class AircraftTypeService
         {
             try
             {
-                var url = $"https://api.adsbdb.com/v0/aircraft/{Uri.EscapeDataString(icao24)}";
-                using var resp = await Http.GetAsync(url).ConfigureAwait(false);
-                if (!resp.IsSuccessStatusCode) { _negative.TryAdd(icao24, 0); return; }
-                var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-
-                if (!doc.RootElement.TryGetProperty("response", out var response) ||
-                    !response.TryGetProperty("aircraft", out var aircraft) ||
-                    aircraft.ValueKind != JsonValueKind.Object)
-                {
+                var result = await TryAdsbDb(icao24).ConfigureAwait(false)
+                          ?? await TryHexDb(icao24).ConfigureAwait(false);
+                if (result is not null)
+                    _memory[icao24] = result;
+                else
                     _negative.TryAdd(icao24, 0);
-                    return;
-                }
-
-                string? mfr      = Get(aircraft, "manufacturer");
-                string? icaoType = Get(aircraft, "icao_type");
-
-                if (string.IsNullOrEmpty(icaoType)) { _negative.TryAdd(icao24, 0); return; }
-
-                _memory[icao24] = string.IsNullOrEmpty(mfr) ? icaoType : $"{mfr} {icaoType}";
             }
             catch
             {
@@ -62,6 +48,43 @@ public sealed class AircraftTypeService
                 _inflight.TryRemove(icao24, out _);
             }
         });
+    }
+
+    private static async Task<string?> TryAdsbDb(string icao24)
+    {
+        try
+        {
+            var url = $"https://api.adsbdb.com/v0/aircraft/{Uri.EscapeDataString(icao24)}";
+            using var resp = await Http.GetAsync(url).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode) return null;
+            var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("response", out var response) ||
+                !response.TryGetProperty("aircraft", out var aircraft) ||
+                aircraft.ValueKind != JsonValueKind.Object) return null;
+            string? mfr      = Get(aircraft, "manufacturer");
+            string? icaoType = Get(aircraft, "icao_type");
+            if (string.IsNullOrEmpty(icaoType)) return null;
+            return string.IsNullOrEmpty(mfr) ? icaoType : $"{mfr} {icaoType}";
+        }
+        catch { return null; }
+    }
+
+    private static async Task<string?> TryHexDb(string icao24)
+    {
+        try
+        {
+            var url = $"https://hexdb.io/api/v1/aircraft/{Uri.EscapeDataString(icao24)}";
+            using var resp = await Http.GetAsync(url).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode) return null;
+            var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            string? mfr      = Get(doc.RootElement, "Manufacturer");
+            string? icaoType = Get(doc.RootElement, "ICAOTypeCode");
+            if (string.IsNullOrEmpty(icaoType)) return null;
+            return string.IsNullOrEmpty(mfr) ? icaoType : $"{mfr} {icaoType}";
+        }
+        catch { return null; }
     }
 
     private static string? Get(JsonElement el, string name) =>
